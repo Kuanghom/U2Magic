@@ -15,12 +15,18 @@ ADD_HOST=u2.dmhy.org:104.25.27.31
 # 初始化变量
 PORT=$DEFAULT_PORT
 DATA_PREFIX=$DEFAULT_DATA_PREFIX
+TOKEN=""
 
-# 解析命令行参数：-p 端口 -v 路径前缀
-while getopts "p:v:" opt; do
+# 生成16位随机字母数字token
+generate_random_token() {
+  echo $(tr -dc 'a-zA-Z0-9' < /dev/urandom | head -c 16)
+}
+
+# 解析命令行参数：-p 端口 -v 路径前缀 -t 自定义token
+while getopts "p:v:t:" opt; do
   case $opt in
     p)
-      # 校验端口是否为数字
+      # 校验端口是否为纯数字
       if [[ ! $OPTARG =~ ^[0-9]+$ ]]; then
         echo "❌ 错误：端口必须是纯数字！"
         exit 1
@@ -30,19 +36,27 @@ while getopts "p:v:" opt; do
     v)
       DATA_PREFIX=$OPTARG
       ;;
+    t)
+      TOKEN=$OPTARG
+      ;;
     \?)
-      echo "❌ 用法：$0 -p 映射端口 -v 数据目录前缀"
-      echo "示例：$0 -p 28888 -v /data/u2"
+      echo "❌ 用法：$0 -p 映射端口 -v 数据目录前缀 -t 自定义token"
+      echo "示例1：$0 -p 28888 -v /data/u2 -t mytoken123456"
+      echo "示例2：$0 -p 28888 -v /data/u2  (自动生成16位token)"
       exit 1
       ;;
   esac
 done
 
+# 未指定-t参数，自动生成16位随机token
+if [ -z "$TOKEN" ]; then
+  TOKEN=$(generate_random_token)
+  echo "⚠️  未指定token，自动生成16位随机token：$TOKEN"
+fi
+
 # ==================== 自动获取服务器真实内网IP ====================
 get_local_ip() {
-  # 获取本机非回环IP，兼容主流Linux系统
   local ip=$(hostname -I | awk '{print $1}')
-  # 兜底：获取失败则用127.0.0.1
   if [ -z "$ip" ]; then
     ip="127.0.0.1"
   fi
@@ -56,6 +70,7 @@ echo -e "\n================================================"
 echo "📌 容器名称：$CONTAINER_NAME"
 echo "📌 映射端口：$PORT:18080"
 echo "📌 数据目录：$DATA_PREFIX"
+echo "📌 登录 Token：$TOKEN"
 echo "📌 容器镜像：$IMAGE_NAME"
 echo -e "================================================\n"
 
@@ -75,19 +90,29 @@ if ! systemctl is-active --quiet docker; then
   fi
 fi
 
-# 3. 停止并删除旧容器（避免冲突）
+# 3. 停止并删除旧容器
 if docker ps -a --format "{{.Names}}" | grep -wq "$CONTAINER_NAME"; then
   echo "🔄 检测到旧容器，正在停止并删除..."
   docker stop $CONTAINER_NAME > /dev/null 2>&1
   docker rm $CONTAINER_NAME > /dev/null 2>&1
 fi
 
-# 4. 自动创建数据目录（避免挂载失败）
+# 4. 自动创建配置目录
 echo "📂 正在创建数据目录..."
 mkdir -p ${DATA_PREFIX}/logs
 mkdir -p ${DATA_PREFIX}/data
+mkdir -p ${DATA_PREFIX}/config
 
-# 5. 启动容器（核心命令，开启自启动）
+# 5. 生成配置文件 application-base.yml
+CONFIG_FILE=${DATA_PREFIX}/config/application-base.yml
+echo "📄 生成配置文件：$CONFIG_FILE"
+cat > $CONFIG_FILE << EOF
+khc:
+  web:
+    sign-token: ${TOKEN}
+EOF
+
+# 6. 启动容器（【已修改】单文件挂载配置）
 echo "🚀 正在启动容器 $CONTAINER_NAME ..."
 docker run -d \
   --name $CONTAINER_NAME \
@@ -95,15 +120,19 @@ docker run -d \
   -p $PORT:18080 \
   -v ${DATA_PREFIX}/logs:/data/u2Magic/logs \
   -v ${DATA_PREFIX}/data:/data/u2 \
+  -v ${DATA_PREFIX}/config/application-base.yml:/data/u2Magic/config/application-base.yml \
   --add-host=$ADD_HOST \
   $IMAGE_NAME
 
-# 6. 执行结果校验 + 打印完整访问地址
+# 7. 执行结果校验 + 打印完整信息
 if [ $? -eq 0 ]; then
   echo -e "\n✅ 容器启动成功！"
   echo "================================================"
-  echo "🌐 完整访问地址：http://$LOCAL_IP:$PORT/index.html?token="
-  echo "token值请执行docker logs -f u2magic 查看"
+  echo "🌐 配置地址：http://$LOCAL_IP:$PORT/index.html?token=$TOKEN"
+  echo "🌐 手动上车地址：http://$LOCAL_IP:$PORT/addTorrent.html?token=$TOKEN"
+  echo "🌐 全局token配置地址：http://$LOCAL_IP:$PORT/token.html"
+  echo "🔑 登录 Token：$TOKEN"
+  echo "📂 配置文件：$CONFIG_FILE"
   echo "📂 日志目录：${DATA_PREFIX}/logs"
   echo "📂 数据目录：${DATA_PREFIX}/data"
   echo "🔄 自启动状态：已开启（开机自动启动）"
