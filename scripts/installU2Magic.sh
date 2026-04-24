@@ -38,6 +38,19 @@ while getopts "p:v:" opt; do
   esac
 done
 
+# ==================== 自动获取服务器真实内网IP ====================
+get_local_ip() {
+  # 获取本机非回环IP，兼容主流Linux系统
+  local ip=$(hostname -I | awk '{print $1}')
+  # 兜底：获取失败则用127.0.0.1
+  if [ -z "$ip" ]; then
+    ip="127.0.0.1"
+  fi
+  echo "$ip"
+}
+LOCAL_IP=$(get_local_ip)
+# ================================================================
+
 # 打印配置信息
 echo -e "\n================================================"
 echo "📌 容器名称：$CONTAINER_NAME"
@@ -85,14 +98,15 @@ docker run -d \
   --add-host=$ADD_HOST \
   $IMAGE_NAME
 
-# 6. 执行结果校验
+# 6. 执行结果校验 + 打印完整访问地址
 if [ $? -eq 0 ]; then
   echo -e "\n✅ 容器启动成功！"
   echo "================================================"
-  echo "🌐 访问地址：http://服务器IP:$PORT"
+  echo "🌐 完整访问地址：http://$LOCAL_IP:$PORT/index.html?token="
+  echo "token值请执行docker logs -f u2magic 查看"
   echo "📂 日志目录：${DATA_PREFIX}/logs"
   echo "📂 数据目录：${DATA_PREFIX}/data"
-  echo "🔄 自启动状态：已开启（容器随Docker开机自启）"
+  echo "🔄 自启动状态：已开启（开机自动启动）"
   echo "================================================"
 else
   echo -e "\n❌ 容器启动失败，请检查端口/目录权限！"
