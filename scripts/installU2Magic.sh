@@ -136,6 +136,8 @@ if [ $? -eq 0 ]; then
   echo "📂 日志目录：${DATA_PREFIX}/logs"
   echo "📂 数据目录：${DATA_PREFIX}/data"
   echo "🔄 自启动状态：已开启（开机自动启动）"
+  echo "📜 【实时查看日志】日志查看: tail -f ${DATA_PREFIX}/logs/u2magic.log"
+  echo "📜 【查看最近100行日志】日志查看: tail -100f ${DATA_PREFIX}/logs/u2magic.log"
   echo "================================================"
 else
   echo -e "\n❌ 容器启动失败，请检查端口/目录权限！"
